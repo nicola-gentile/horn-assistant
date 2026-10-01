@@ -1,0 +1,7 @@
+(set-logic HORN)
+(declare-fun R (Real Int) Bool)
+
+(assert (forall ((n Int) (r Real)) (=> (and (= r 1.0) (= n 0)) (R r n))))
+(assert (forall ((n Int) (r Real) (v_0 Real) (v_1 Int)) (=> (and (R r n) (= v_0 (+ r (/ 1.0 2.0))) (= v_1 (+ n 1))) (R v_0 v_1))))
+(assert (forall ((n Int) (r Real)) (=> (and (R r n) (< r (- 1.0)) (> (to_real n) 2.5)) false)))
+(check-sat)

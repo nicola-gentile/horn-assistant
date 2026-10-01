@@ -1,0 +1,8 @@
+(set-logic HORN)
+(declare-fun Inv (Int) Bool)
+(define-fun step ((a Int) (b Int)) Bool (= b (+ a 2)))
+(define-fun start () Int 0)
+(assert (Inv start))
+(assert (forall ((x Int) (y Int)) (=> (and (Inv x) (step x y)) (Inv y))))
+(assert (forall ((x Int)) (=> (Inv x) (>= x start))))
+(check-sat)

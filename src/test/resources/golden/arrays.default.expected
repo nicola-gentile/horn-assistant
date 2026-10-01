@@ -1,0 +1,7 @@
+(set-logic HORN)
+(declare-fun Mem ((Array Int Int) Int) Bool)
+
+(assert (forall ((i Int) (v_0 (Array Int Int))) (=> (= v_0 ((as const (Array Int Int)) 0)) (Mem v_0 i))))
+(assert (forall ((a (Array Int Int)) (i Int) (v_1 (Array Int Int)) (v_2 Int)) (=> (and (Mem a i) (< i 10) (= v_1 (store a i (+ (select a i) 1))) (= v_2 (+ i 1))) (Mem v_1 v_2))))
+(assert (forall ((a (Array Int Int)) (i Int)) (=> (and (Mem a i) (< (select a 0) 0)) false)))
+(check-sat)

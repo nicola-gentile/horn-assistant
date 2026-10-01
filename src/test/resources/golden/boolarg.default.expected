@@ -1,0 +1,6 @@
+(set-logic HORN)
+(declare-fun F (Bool Int) Bool)
+
+(assert (forall ((v_0 Bool) (x Int)) (=> (= v_0 (> x 0)) (F v_0 x))))
+(assert (forall ((b Bool) (x Int)) (=> (and (F b x) b) false)))
+(check-sat)

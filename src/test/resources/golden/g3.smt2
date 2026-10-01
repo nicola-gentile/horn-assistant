@@ -1,0 +1,8 @@
+(set-logic HORN)
+(declare-fun Init () Bool)
+(declare-fun Bad () Bool)
+(declare-const n Int)
+(assert Init)
+(assert (=> (and Init (> n 5)) Bad))
+(assert (not (and Bad (< n 0))))
+(assert (> n 0))

@@ -1,0 +1,7 @@
+{
+  "resources": [
+    {
+      "glob": "hornassistant/version.properties"
+    }
+  ]
+}

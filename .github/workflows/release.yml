@@ -2,74 +2,175 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    tags:
+      - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to release, e.g. v0.1.0
+        required: true
 
 permissions:
   contents: write
 
-jobs:
-  dist:
-    name: Build wheel and sdist
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
-      - name: Check tag matches project version
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          version="$(uv version --short)"
-          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME != version $version"; exit 1; }
-      - run: uv build
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/
+env:
+  TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
-  standalone:
-    name: Standalone (${{ matrix.target }})
-    needs: dist
-    runs-on: ${{ matrix.os }}
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0
+
+      - name: Check the tag is on main
+        shell: bash
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$TAG^{commit}" origin/main; then
+            echo "::error::tag $TAG does not point to a commit on main"
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Compare tag and pom version
+        id: version
+        shell: bash
+        run: |
+          pom_version=$(./mvnw -q help:evaluate -Dexpression=project.version -DforceStdout)
+          tag_version=${TAG#v}
+          if [ "$pom_version" != "$tag_version" ]; then
+            echo "::error::tag $TAG does not match pom version $pom_version"
+            exit 1
+          fi
+          echo "version=$pom_version" >> "$GITHUB_OUTPUT"
+
+  jar:
+    needs: check-version
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.check-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Build and test
+        shell: bash
+        run: ./mvnw -B verify
+
+      - name: Name the jar
+        shell: bash
+        run: |
+          mkdir dist
+          cp target/horn-assistant.jar "dist/horn-assistant-$VERSION.jar"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: horn-assistant-${{ env.VERSION }}.jar
+          path: dist/horn-assistant-${{ env.VERSION }}.jar
+          if-no-files-found: error
+
+  native:
+    needs: check-version
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, target: linux-x64 }
-          - { os: ubuntu-24.04-arm, target: linux-aarch64 }
-          - { os: macos-15-intel, target: macos-x64 }
-          - { os: macos-latest, target: macos-arm64 }
-          - { os: windows-latest, target: windows-x64 }
+          - runner: ubuntu-latest
+            suffix: linux-x86_64
+          - runner: ubuntu-24.04-arm
+            suffix: linux-aarch64
+          - runner: macos-latest
+            suffix: macos-aarch64
+          - runner: windows-latest
+            suffix: windows-x86_64.exe
+    runs-on: ${{ matrix.runner }}
+    env:
+      VERSION: ${{ needs.check-version.outputs.version }}
+      ASSET: horn-assistant-${{ needs.check-version.outputs.version }}-${{ matrix.suffix }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
         with:
-          python-version: "3.12"
-      - uses: actions/download-artifact@v5
+          ref: ${{ env.TAG }}
+
+      - uses: graalvm/setup-graalvm@v1
         with:
-          name: dist
-          path: dist/
-      - name: Build standalone bundle
+          java-version: '25'
+          distribution: graalvm
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache: maven
+
+      - name: Build native image
         shell: bash
-        run: python scripts/build_standalone.py --wheel dist/*.whl --out-dir standalone
-      - uses: actions/upload-artifact@v4
+        run: ./mvnw -B -Pnative package
+
+      - name: Locate the binary
+        shell: bash
+        run: |
+          exe=target/horn-assistant
+          if [ "$RUNNER_OS" = "Windows" ]; then exe=target/horn-assistant.exe; fi
+          echo "EXE=$exe" >> "$GITHUB_ENV"
+
+      - name: Golden and CLI tests against the binary
+        shell: bash
+        run: ./mvnw -B test -Dtest='GoldenTest,ErrorCasesTest,CliTest' -Dhorn.exe="$EXE"
+
+      - name: Check the version
+        shell: bash
+        run: |
+          actual=$("$EXE" --version | tr -d '\r')
+          expected="horn-assistant $VERSION"
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::--version printed '$actual', expected '$expected'"
+            exit 1
+          fi
+
+      - name: Name the binary
+        shell: bash
+        run: |
+          mkdir dist
+          cp "$EXE" "dist/$ASSET"
+
+      - uses: actions/upload-artifact@v7
         with:
-          name: standalone-${{ matrix.target }}
-          path: |
-            standalone/*.tar.gz
-            standalone/*.zip
+          name: ${{ env.ASSET }}
+          path: dist/${{ env.ASSET }}
           if-no-files-found: error
 
-  release:
-    name: Publish GitHub release
-    needs: [dist, standalone]
-    if: startsWith(github.ref, 'refs/tags/')
+  publish:
+    needs: [check-version, jar, native]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
-          path: artifacts/
+          path: dist
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/*
-          generate_release_notes: true
+
+      - name: Checksums
+        shell: bash
+        working-directory: dist
+        run: |
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --verify-tag --generate-notes dist/*

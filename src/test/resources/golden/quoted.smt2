@@ -1,0 +1,6 @@
+(set-logic HORN)
+(declare-fun |my pred| (Int) Bool)
+(declare-fun |assert| () Bool)
+(assert (forall ((|a b| Int)) (=> (> |a b| 0) (|my pred| |a b|))))
+(assert (forall ((x Int)) (=> (|my pred| (+ x 1)) |assert|)))
+(check-sat)

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Runs horn-assistant from the fat jar built by `./mvnw verify`.
+dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec java -jar "$dir/target/horn-assistant.jar" "$@"

@@ -1,0 +1,9 @@
+(set-logic HORN)
+(declare-fun Bad () Bool)
+(declare-fun Init () Bool)
+
+(assert Init)
+(assert (forall ((n Int)) (=> (and Init (> n 5)) Bad)))
+(assert (forall ((n Int)) (=> (and Bad (< n 0)) false)))
+(assert (forall ((n Int)) (=> (not (> n 0)) false)))
+(check-sat)

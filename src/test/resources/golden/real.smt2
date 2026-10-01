@@ -1,0 +1,6 @@
+(set-logic HORN)
+(declare-fun R (Real Int) Bool)
+(assert (forall ((r Real) (n Int)) (=> (and (= r 1) (= n 0)) (R r n))))
+(assert (forall ((r Real) (n Int)) (=> (R r n) (R (+ r (/ 1 2)) (+ n 1)))))
+(assert (forall ((r Real) (n Int)) (=> (and (R r n) (< r (- 1)) (> (to_real n) 2.50)) false)))
+(check-sat)

@@ -2,39 +2,53 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  typecheck:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
-        with:
-          python-version: "3.12"
-      - run: uv sync --locked
-      - run: uv run mypy
+      - uses: actions/checkout@v7
 
-  test:
-    name: test (${{ matrix.os }}, ${{ matrix.python }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        python: ["3.12", "pypy3.12"]
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
-        id: python
+      - uses: actions/setup-java@v6
         with:
-          python-version: ${{ matrix.python }}
-      - uses: astral-sh/setup-uv@v6
-      - name: Use the installed interpreter
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Build and test
         shell: bash
-        run: echo "UV_PYTHON=${{ steps.python.outputs.python-path }}" >> "$GITHUB_ENV"
-      - name: Install
-        run: uv sync --locked --no-group typing
-      - name: Test
-        run: uv run --no-sync pytest
+        run: ./mvnw -B verify
+
+      - name: Golden and CLI tests against the jar
+        shell: bash
+        run: ./mvnw -B test -Dtest='GoldenTest,ErrorCasesTest,CliTest' -Dhorn.exe='java -jar target/horn-assistant.jar'
+
+  native-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25'
+          distribution: graalvm
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache: maven
+
+      - name: Build native image (runs the JVM and native test suites)
+        shell: bash
+        run: ./mvnw -B -Pnative package
+
+      - name: Golden and CLI tests against the native binary
+        shell: bash
+        run: ./mvnw -B test -Dtest='GoldenTest,ErrorCasesTest,CliTest' -Dhorn.exe=target/horn-assistant
+
+      - name: Smoke run
+        shell: bash
+        run: |
+          ./target/horn-assistant --version
+          ./target/horn-assistant src/test/resources/golden/g1.smt2

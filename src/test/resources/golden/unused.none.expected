@@ -1,0 +1,7 @@
+(set-logic HORN)
+(declare-fun A () Bool)
+(declare-fun Unused (Int Bool) Bool)
+
+(assert A)
+(assert (=> (and A) false))
+(check-sat)
